@@ -13,7 +13,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 
 # --- Configuration ---
-MODEL_FILE = 'supermarket_sales_model.pkl'
+MODEL_FILE = 'nigerian_supermarket_sales_model.pkl'
 DATA_FILE = 'Nigerian_Supermarket_Analysis.csv'
 
 # --- Model Training Function ---
@@ -70,17 +70,17 @@ model = load_model()
 # --- Streamlit UI ---
 st.title("🛒 Supermarket Sales Prediction")
 st.markdown("""
-This app predicts the **Total Sales** for a transaction. 
-Enter the key product details below.
+This app predicts **Total Sales** based on product details and timing. 
+Adjust the inputs on the left to see how **Price**, **Quantity**, and **Date** affect the forecast.
 """)
 
 if model is None:
     st.stop()
 
-# --- Inputs ---
-st.sidebar.header("Key Transaction Details")
+# --- Sidebar Inputs ---
 
-# 1. Location Context (City determines Branch)
+# 1. Location Context
+st.sidebar.subheader("1. Location")
 city_branch_map = {
     'Lagos': 'Ikeja',
     'Abuja': 'Maitama',
@@ -89,34 +89,30 @@ city_branch_map = {
 cities = list(city_branch_map.keys())
 selected_city = st.sidebar.selectbox("City", options=cities)
 inferred_branch = city_branch_map[selected_city] # Auto-select branch based on city
+st.sidebar.caption(f"Branch: {inferred_branch}")
 
 # 2. Product Context
+st.sidebar.subheader("2. Product Details")
 product_lines = ['Health and beauty', 'Electronic accessories', 'Home and lifestyle', 
                  'Sports and travel', 'Food and beverages', 'Fashion accessories']
 selected_product_line = st.sidebar.selectbox("Product Line", options=product_lines)
-
-# 3. The Major Predictors (Unit Price & Quantity)
-st.sidebar.markdown("---")
-st.sidebar.subheader("Sales Drivers")
 unit_price = st.sidebar.number_input("Unit Price (₦)", min_value=1.0, max_value=1000.0, value=50.0)
 quantity = st.sidebar.slider("Quantity", min_value=1, max_value=50, value=1)
 
-# 4. Date & Time Inputs (Restored for Forecasting)
-st.sidebar.markdown("---")
-st.sidebar.subheader("Forecast Date")
+# 3. Timing (Crucial for seasonality)
+st.sidebar.subheader("3. Timing & Seasonality")
+st.sidebar.caption("Sales may fluctuate based on the day of the month or time of day.")
 transaction_date = st.sidebar.date_input("Date", datetime.date.today())
-# We include time because 'Hour' is a feature in the model
-transaction_time = st.sidebar.time_input("Time (Approx)", datetime.datetime.now().time())
+transaction_time = st.sidebar.time_input("Time", datetime.datetime.now().time())
 
 # --- Hidden Defaults for "Less Important" Features ---
-# These are required by the model but have low impact on the specific calculation
 default_customer = 'Normal'
 default_gender = 'Female'
 default_payment = 'Cash'
 default_rating = 7.0
 
 # Predict Button
-if st.button("Predict Total Sales"):
+if st.button("Predict Total Sales", type="primary"):
     # Prepare input data with User Inputs + Defaults
     input_data = pd.DataFrame({
         'Branch': [inferred_branch], 
@@ -140,12 +136,22 @@ if st.button("Predict Total Sales"):
         st.success(f"💰 Predicted Total Sales: **₦{prediction:.2f}**")
         
         # Contextual info
-        st.caption(f"📍 Location: {inferred_branch}, {selected_city}")
+        st.markdown(f"""
+        **Forecast Details:**
+        - **Date:** {transaction_date.strftime('%B %d, %Y')}
+        - **Time:** {transaction_time.strftime('%I:%M %p')}
+        - **Location:** {inferred_branch}, {selected_city}
+        """)
         
         # Breakdown
         subtotal = unit_price * quantity
         tax_est = prediction - subtotal
-        st.info(f"**Breakdown:**\n- Subtotal: ₦{subtotal:.2f}\n- VAT (5%): ₦{tax_est:.2f}")
+        
+        with st.expander("See Cost Breakdown"):
+            st.info(f"""
+            - **Base Cost (Price × Qty):** ₦{subtotal:.2f}
+            - **Estimated VAT & Adjustments:** ₦{tax_est:.2f}
+            """)
         
     except Exception as e:
         st.error(f"Error during prediction: {e}")
