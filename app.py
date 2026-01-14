@@ -2,37 +2,93 @@ import streamlit as st
 import pandas as pd
 import joblib
 import datetime
+import os
 
-# Load the trained model
+# Imports needed for retraining if the model file is incompatible
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+
+# --- Configuration ---
+MODEL_FILE = 'supermarket_sales_model.pkl'
+DATA_FILE = 'SuperMarket Analysis.csv'
+
+# --- Model Training Function ---
+def train_and_save_model():
+    """Retrains the model using the CSV file and saves it."""
+    if not os.path.exists(DATA_FILE):
+        st.error(f"Dataset '{DATA_FILE}' not found. Please upload it to the application directory.")
+        return None
+
+    df = pd.read_csv(DATA_FILE)
+
+    # Preprocessing identical to the notebook
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Month'] = df['Date'].dt.month
+    df['Day'] = df['Date'].dt.day
+    df['Hour'] = pd.to_datetime(df['Time']).dt.hour
+
+    # Features and Target
+    X = df.drop(['Invoice ID', 'Tax 5%', 'Sales', 'cogs', 'gross margin percentage', 
+                 'gross income', 'Date', 'Time'], axis=1)
+    y = df['Sales']
+
+    categorical_cols = ['Branch', 'City', 'Customer type', 'Gender', 'Product line', 'Payment']
+    numerical_cols = ['Unit price', 'Quantity', 'Rating', 'Month', 'Day', 'Hour']
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), numerical_cols),
+            ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_cols)
+        ])
+
+    # Pipeline
+    model = Pipeline(steps=[('preprocessor', preprocessor),
+                            ('model', RandomForestRegressor(n_estimators=100, random_state=42))])
+    
+    # Fit
+    model.fit(X, y)
+    
+    # Save
+    joblib.dump(model, MODEL_FILE)
+    return model
+
+# --- Load Model ---
 @st.cache_resource
 def load_model():
     try:
-        model = joblib.load('supermarket_sales_model.pkl')
+        # Try loading the existing model
+        model = joblib.load(MODEL_FILE)
         return model
-    except FileNotFoundError:
-        st.error("Model file 'supermarket_sales_model.pkl' not found. Please run the notebook first to generate the model.")
-        return None
+    except (FileNotFoundError, AttributeError, ModuleNotFoundError, Exception):
+        # If loading fails (version mismatch or missing file), retrain immediately
+        # st.warning("Model version mismatch or file not found. Retraining model...")
+        return train_and_save_model()
 
+# Load the model (or retrain if needed)
 model = load_model()
 
-# Title and Description
+# --- Streamlit UI ---
 st.title("🛒 Supermarket Sales Prediction App")
 st.markdown("""
-This application forecasts the **Total Sales** for a supermarket transaction based on customer and product details.
-Adjust the parameters in the sidebar to generate a prediction.
+This application forecasts the **Total Sales** for a supermarket transaction.
 """)
+
+if model is None:
+    st.stop() # Stop execution if model failed to load/train
 
 # Sidebar Inputs
 st.sidebar.header("Transaction Details")
 
-# Define options based on dataset
+# Define options (hardcoded for UI stability)
 cities = ['Yangon', 'Naypyitaw', 'Mandalay']
 customer_types = ['Member', 'Normal']
 genders = ['Male', 'Female']
 product_lines = ['Health and beauty', 'Electronic accessories', 'Home and lifestyle', 
                  'Sports and travel', 'Food and beverages', 'Fashion accessories']
 payments = ['Ewallet', 'Cash', 'Credit card']
-branches = ['A', 'B', 'C'] # Generic placeholders
 
 # Input Fields
 branch_input = st.sidebar.text_input("Branch Name", value="A") 
@@ -49,39 +105,32 @@ time = st.sidebar.time_input("Transaction Time", datetime.time(12, 00))
 
 # Predict Button
 if st.button("Predict Total Sales"):
-    if model is not None:
-        # Prepare input data as DataFrame
-        input_data = pd.DataFrame({
-            'Branch': [branch_input], 
-            'City': [city],
-            'Customer type': [customer_type],
-            'Gender': [gender],
-            'Product line': [product_line],
-            'Unit price': [unit_price],
-            'Quantity': [quantity],
-            'Rating': [rating],
-            'Month': [date.month],
-            'Day': [date.day],
-            'Hour': [time.hour],
-            'Payment': [payment]
-        })
+    # Prepare input data
+    input_data = pd.DataFrame({
+        'Branch': [branch_input], 
+        'City': [city],
+        'Customer type': [customer_type],
+        'Gender': [gender],
+        'Product line': [product_line],
+        'Unit price': [unit_price],
+        'Quantity': [quantity],
+        'Rating': [rating],
+        'Month': [date.month],
+        'Day': [date.day],
+        'Hour': [time.hour],
+        'Payment': [payment]
+    })
 
-        try:
-            # Make prediction
-            prediction = model.predict(input_data)[0]
-
-            # Display Result
-            st.success(f"💰 Predicted Total Sales: **${prediction:.2f}**")
-            
-            # Breakdown info
-            subtotal = unit_price * quantity
-            tax_est = prediction - subtotal
-            
-            st.info(f"Breakdown Estimate:\n- Subtotal (Price x Qty): ${subtotal:.2f}\n- Estimated Tax & Variation: ${tax_est:.2f}")
-        except Exception as e:
-            st.error(f"Error during prediction: {e}")
-    else:
-        st.warning("Model not loaded.")
+    try:
+        prediction = model.predict(input_data)[0]
+        st.success(f"💰 Predicted Total Sales: **${prediction:.2f}**")
+        
+        # Breakdown info
+        subtotal = unit_price * quantity
+        tax_est = prediction - subtotal
+        st.info(f"Breakdown Estimate:\n- Subtotal (Price x Qty): ${subtotal:.2f}\n- Estimated Tax & Variation: ${tax_est:.2f}")
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
 
 # Footer
 st.markdown("---")
