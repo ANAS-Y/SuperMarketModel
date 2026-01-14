@@ -152,4 +152,4 @@ if st.button("Predict Total Sales"):
 
 # Footer
 st.markdown("---")
-st.markdown("Developed by Anas Yunusa Adamu|3MTT Fellow for Cohort 1 DeepTech ")
+st.markdown("Developed by Anas Yunusa Adamu | 3MTT Fellow for Cohort 1 DeepTech Capstone Project")
